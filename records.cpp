@@ -113,9 +113,9 @@ int find_length(ifstream &inputFile,int&start_add)
         break;
         if(instruction=="START")
         {
-            start_add=stoi(operand,nullptr,16);
-            loc_ctr=start_add;
-            started=true;
+            //start_add=stoi(operand,nullptr,16);
+            //loc_ctr=start_add;
+            //started=true;
             continue;
         }
         if(!(instruction=="WORD"||instruction=="RESW"||instruction=="RESB"||instruction=="BYTE"))
@@ -139,7 +139,7 @@ int find_length(ifstream &inputFile,int&start_add)
 int main() {
     ifstream inputFile("Input.txt");
     ifstream objFile("Output.obj");
-    ofstream outputFile("Records.obj");
+    ofstream outputFile("Records.txt");
     if (!inputFile||!objFile||!outputFile) {
         cout<<"Error opening file!"<<endl;
         return 1;
@@ -151,7 +151,7 @@ int main() {
     string line;
 
     programLength=find_length(inputFile,startAddress);  
-
+    programLength-=3;
     createHeaderRecord(outputFile,programName,startAddress,programLength);
 
     createTextRecords(outputFile,objFile,startAddress);
