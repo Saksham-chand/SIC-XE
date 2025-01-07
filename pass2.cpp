@@ -45,6 +45,27 @@ unordered_map<string, string>OPTAB={
     {"WD","DC"}      // Write
 };
 
+unordered_map<string,string>format2=
+{
+        {"SVC", "B0"},
+        {"CLEAR", "B4"},
+        {"ADDR", "90"},
+        {"COMPR", "A0"},
+        {"SUBR", "94"},
+        {"MULR", "98"},
+        {"DIVR", "9C"},
+        {"RMO", "AC"},
+        {"SHIFTL", "A4"},
+        {"SHIFTR", "A8"},
+        {"TIXR", "B8"},
+        {"AND", "40"},
+        {"OR", "44"},
+        {"NOT", "50"}
+};
+
+int bp=0,pc=0;
+unordered_map<string,string>Registers={{"A","0"},{"B","3"},{"S","4"},{"T","5"},{"F","6"},{"X","1"}};
+
 void create_symtab(vector<pair<string,int>>&symtab)
 {
     ifstream inFile("Symtab.txt");
@@ -56,7 +77,79 @@ void create_symtab(vector<pair<string,int>>&symtab)
     inFile.close();
 }
 
-#include <algorithm> // for find_if and lambda
+string intToHex(int value,int width) {
+    stringstream stream;
+    stream<<setw(width)<<setfill('0')<<hex<<uppercase<<value;
+    return stream.str();
+}
+
+bool is12BitDisplacement(int displacement) {
+    return (displacement>=0&&displacement<=4095);
+}
+
+string constructInstructionCode(string& opcodeHex,bool n,bool i,bool x,bool b,bool p,bool e,int displacement) {
+    int opcode=stoi(opcodeHex,nullptr,16);
+    int ni=(n<<1)|i;
+    opcode=(opcode&0xFC)|ni;
+    int xbpe=(x<<3)|(b<<2)|(p<<1)|e;
+    //cout<<hex<<opcodeHex<<' '<<pc<<' '<<bp<<' '<<displacement<<endl;
+    if(!e) 
+    {
+        if(p||b)
+        {
+            if(p)
+            {
+                int dp=displacement-pc;
+                if((dp)>0&&is12BitDisplacement(dp))
+                {
+                    int instruction=(opcode<<16)|(xbpe<<12)|((dp)&0xFFF);
+                    return intToHex(instruction,6);
+                }
+                int temp=abs(static_cast<int>(displacement)-static_cast<int>(pc));
+                if(!is12BitDisplacement(temp))
+                goto x;
+                dp=~dp;
+                dp=0xFFF-dp;
+                dp=0xFFF&dp;
+                dp=static_cast<int>(dp);
+                if(is12BitDisplacement(dp))
+                {
+                    int instruction=(opcode<<16)|(xbpe<<12)|(dp&0xFFF);
+                    return intToHex(instruction,6);
+                }
+            }
+            x:p=false;
+            b=true;
+            xbpe=(x<<3)|(b<<2)|(p<<1)|e;
+            if(b)
+            {
+                int db=displacement-bp;
+                if((db)>0&&is12BitDisplacement(db))
+                {
+                    int instruction=(opcode<<16)|(xbpe<<12)|(db&0xFFF);
+                    return intToHex(instruction,6);
+                }
+                db=~db;
+                db=0xFFF-db;
+                db=0xFFF&db;
+                db=static_cast<int>(db);
+                if(is12BitDisplacement(db))
+                {
+                    int instruction=(opcode<<16)|(xbpe<<12)|(db&0xFFF);
+                    return intToHex(instruction,6);
+                }
+            }
+        }
+        int instruction=(opcode<<16)|(xbpe<<12)|(displacement&0xFFF);
+        return intToHex(instruction,6);
+    } 
+    else 
+    {
+        int instruction=(opcode<<24)|(xbpe<<20)|(displacement&0xFFFFF);
+        return intToHex(instruction,8);
+    }
+    return "";
+}
 
 int findAddress(vector<pair<string, int>> symtab, string operand) {
     operand.erase(operand.find_last_not_of(" \n\r\t")+1);
@@ -98,6 +191,7 @@ void pass2(ifstream &inputFile,vector<pair<string,int>> &symtab,int &e)
 {
     string line;
     int loc_ctr=0;
+    bool start=false;
     ofstream outputFile("Output.obj");
     if (!outputFile) {
         cerr<<"Error opening output file\n"<<endl;
@@ -111,61 +205,214 @@ void pass2(ifstream &inputFile,vector<pair<string,int>> &symtab,int &e)
         instruction.erase(instruction.find_last_not_of(" \n\r\t")+1);
         if(instruction=="RSUB")
         {
-            outputFile<<"4C0000"<<endl;
+            outputFile<<"4F0000"<<endl;
+            pc+=0x3;
             continue;
         }
         if(instruction=="START")
         {
             loc_ctr=stoi(operand);
+            start=true;
+            pc=stoi(operand);
+            continue;
+        }
+        if(instruction=="BASE")
+        continue;
+        if(!start)
+        {
+            e=1;
+            return;
+        }
+        if(instruction=="LDB")
+        {
+            if(operand[0]=='#')
+            operand=operand.substr(1);
+            bp=(findAddress(symtab,operand));
+            pc+=0x3;
+            string opcodeHex=OPTAB[instruction];
+            bool n,i,x=false,b,p,e;
+            n=false;
+            i=true;
+            e=false;
+            p=true;
+            b=false;
+            int l=operand.length();
+            if(operand.length()>2&&operand[l-1]=='X'&&operand[l-2]==',')
+            {
+                x=true;
+                operand=operand.substr(0,operand.size()-2);
+            }
+            int opcode=stoi(opcodeHex,nullptr,16);
+            int ni=(n<<1)|i;
+            opcode=(opcode&0xFC)|ni;
+            int xbpe=(x<<3)|(b<<2)|(p<<1)|e;
+            int instruction=(opcode<<16)|(xbpe<<12)|((bp-pc)&0xFFF);
+            outputFile<<intToHex(instruction,6)<<setw(4)<<setfill('0')<<hex<<uppercase<<endl;
             continue;
         }
         if(instruction=="END")
         break;
-        if(OPTAB.find(instruction)!=OPTAB.end())
+        if(format2.find(instruction)!=format2.end())    //format 2
         {
+            string op=format2[instruction];
+            pc+=0x2;
+            if(operand.length()==1)
+            {
+                string r=Registers[operand];
+                string a=Registers["A"];
+                outputFile<<setw(2)<<op<<r<<a<<endl;
+            }
+            else
+            {
+                string r(1,operand[0]);
+                r=Registers[r];
+                string a(1,operand[2]);
+                a=Registers[a];
+                outputFile<<setw(4)<<op<<r<<a<<endl;
+            }
+        }
+        else if(OPTAB.find(instruction)!=OPTAB.end())   //format 3
+        {
+            pc+=0x3;
+            bool n,i,x=false,b,p,e;
+            int disp;
             string opcode=OPTAB[instruction];
-            bool i=false;
             int l=operand.length(),add;
             if(operand.length()>2&&operand[l-1]=='X'&&operand[l-2]==',')
             {
-                i=true;
+                x=true;
                 operand=operand.substr(0,operand.size()-2);
             }
+            if(operand[0]=='#')
+            {
+                operand=operand.substr(1);
+                n=false;
+                i=true;
+                e=false;
+                p=false;
+                b=false;
+                if(isdigit(operand[0]))
+                disp=stoi(operand);
+                else
+                disp=findAddress(symtab,operand);
+                outputFile<<constructInstructionCode(opcode,n,i,x,b,p,e,disp)<<setw(4)<<setfill('0')<<hex<<uppercase<<endl;
+            }
+            else if(operand[0]=='@')
+            {
+                operand=operand.substr(1);
+                n=true;
+                i=false;
+                e=false;
+                p=true;
+                b=false;
+                if(isdigit(operand[0]))
+                disp=stoi(operand);
+                else
+                disp=findAddress(symtab,operand);
+                string code=constructInstructionCode(opcode,n,i,x,b,p,e,disp);
+                outputFile<<code<<setw(4)<<setfill('0')<<hex<<uppercase<<endl;
+            }
+            else
+            {
+                n=true;
+                i=true;
+                e=false;
+                p=true;
+                b=false;
+                disp=findAddress(symtab,operand);
+                string code=constructInstructionCode(opcode,n,i,x,b,p,e,disp);
+                outputFile<<code<<setw(4)<<setfill('0')<<hex<<uppercase<<endl;
+            }
+        }
+        else if(instruction[0]=='+')    //format 4
+        {
+            pc+=0x4;
+            bool n,i,x=false,b,p,e;
+            instruction=instruction.substr(1);
+            string opcode=OPTAB[instruction];
+            int l=operand.length(),add;
+            if(operand.length()>2&&operand[l-1]=='X'&&operand[l-2]==',')
+            {
+                x=true;
+                operand=operand.substr(0,operand.size()-2);
+            }
+            if(!isdigit(operand[1]))
             add=findAddress(symtab,operand);
+            else
+            add=stoi(operand.substr(1,l));
             if(add==-1)
             {
                 e=1;
                 cout<<operand<<endl;
                 return; 
             }
-            if(i)
-            add|=0x8000;
-            outputFile<<opcode<<setw(4)<<setfill('0')<<hex<<uppercase<<add<<endl;
+            if(operand[0]=='#')
+            {
+                operand=operand.substr(1);
+                n=false;
+                i=true;
+                b=false;
+                p=false;
+                e=true;
+            }
+            else if(operand[0]=='@')
+            {
+                operand=operand.substr(1);
+                n=true;
+                i=false;
+                b=false;
+                p=false;
+                e=true;
+            }
+            else
+            {
+                n=true;
+                i=true;
+                b=false;
+                p=false;
+                e=true;
+            }
+            outputFile<<constructInstructionCode(opcode,n,i,x,b,p,e,add)<<setw(4)<<setfill('0')<<hex<<uppercase<<endl;
         }
         else if(instruction=="WORD")
-        outputFile<<setw(6)<<setfill('0')<<hex<<uppercase<<stoi(operand)<<endl;
+        {
+            outputFile<<setw(6)<<setfill('0')<<hex<<uppercase<<stoi(operand)<<endl;
+            pc+=0x3;
+        }
         else if(instruction=="BYTE")
         {
             if(operand[0]=='X')
-            outputFile<<operand.substr(2,operand.size()-1)<<endl;
+            {
+                outputFile<<operand.substr(2,operand.size()-3)<<endl;
+                string temp=operand;
+                temp=temp.substr(2,temp.size()-3);
+                int l=temp.length();
+                pc+=(l/2);
+            }
             else if(operand[0]=='C')
             {
                 for (int j=2;j<operand.size()-1;j++) 
                 {
                     char currentChar=operand[j];
                     outputFile<<setw(2)<<setfill('0')<<hex<<uppercase<<(int)(unsigned char)currentChar<<endl;
+                    pc+=0x1;
                 }
             }
         }
         else if(instruction=="RESW")
-        outputFile<<"RESW_"<<operand<<endl;
+        {
+            outputFile<<"RESW_"<<operand<<endl;
+            pc+=(3*stoi(operand));
+        }
         else if(instruction=="RESB")
-        outputFile<<"RESB_"<<operand<<endl;
+        {
+            outputFile<<"RESB_"<<operand<<endl;
+            pc+=stoi(operand);
+        }
         else
         {
             e=1;
-            cout<<"Unidentified Symbol:"<<instruction<<endl;
-            return ;
+            return;
         }
     }
 }

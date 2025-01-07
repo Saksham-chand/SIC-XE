@@ -4,8 +4,27 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include<unordered_map>
 
 using namespace std;
+
+unordered_map<string,string>format2=
+{
+        {"SVC", "B0"},
+        {"CLEAR", "B4"},
+        {"ADDR", "90"},
+        {"COMPR", "A0"},
+        {"SUBR", "94"},
+        {"MULR", "98"},
+        {"DIVR", "9C"},
+        {"RMO", "AC"},
+        {"SHIFTL", "A4"},
+        {"SHIFTR", "A8"},
+        {"TIXR", "B8"},
+        {"AND", "40"},
+        {"OR", "44"},
+        {"NOT", "50"}
+};
 
 void parseLine(string &line,string&label,string&instruction,string&operand)
 {
@@ -113,13 +132,13 @@ int find_length(ifstream &inputFile,int&start_add)
         break;
         if(instruction=="START")
         {
-            //start_add=stoi(operand,nullptr,16);
-            //loc_ctr=start_add;
-            //started=true;
+            start_add=stoi(operand,nullptr,16);
+            loc_ctr=start_add;
+            started=true;
             continue;
         }
-        if(!(instruction=="WORD"||instruction=="RESW"||instruction=="RESB"||instruction=="BYTE"))
-        loc_ctr+=3;
+        else if(instruction[0]=='+')
+        loc_ctr+=4;
         else if(instruction=="RESW")
         loc_ctr+=3*stoi(operand);
         else if(instruction=="RESB")
@@ -133,13 +152,17 @@ int find_length(ifstream &inputFile,int&start_add)
             else if(operand[0]=='X')
             loc_ctr+=(operand.length()-3)/2;
         }
+        else if(format2.find(instruction)!=format2.end())
+        loc_ctr+=2;
+        else
+        loc_ctr+=3;
     }
     return loc_ctr;
 }
 int main() {
     ifstream inputFile("Input.txt");
     ifstream objFile("Output.obj");
-    ofstream outputFile("Records.txt");
+    ofstream outputFile("Records.obj");
     if (!inputFile||!objFile||!outputFile) {
         cout<<"Error opening file!"<<endl;
         return 1;
@@ -151,7 +174,7 @@ int main() {
     string line;
 
     programLength=find_length(inputFile,startAddress);  
-    programLength-=3;
+    programLength-=6;
     createHeaderRecord(outputFile,programName,startAddress,programLength);
 
     createTextRecords(outputFile,objFile,startAddress);

@@ -44,6 +44,11 @@ unordered_map<string, string>OPTAB={
     {"WD","DC"}      // Write
 };
 
+unordered_map<string,int>format2=
+{
+    {"SVC", 1},{"CLEAR", 2},{"ADDR", 2},{"COMPR", 2},{"SUBR", 2},{"MULR", 2},{"DIVR", 2},{"RMO", 2},{"SHIFTL", 2},{"SHIFTR", 2},{"TIXR", 2},{"AND", 2},{"OR", 2},{"NOT", 2}
+};
+
 void parseLine(string &line,string&label,string&instruction,string&operand)
 {
     int l=line.length();
@@ -86,7 +91,6 @@ vector<pair<string,int>>pass1(ifstream &inputFile,int &e,int&start_add,int&loc_c
         parseLine(line,label,instruction,operand);
         operand.erase(operand.find_last_not_of(" \n\r\t")+1);
         instruction.erase(instruction.find_last_not_of(" \n\r\t")+1);
-        cout<<hex<<loc_ctr<<' '<<instruction<<endl;
         if(instruction=="END")
         break;
         if(instruction=="START")
@@ -102,11 +106,13 @@ vector<pair<string,int>>pass1(ifstream &inputFile,int &e,int&start_add,int&loc_c
             cout<<"No Starting of the Program\n";
             return symtab;
         }
+        if(instruction=="BASE")
+        continue;
         if(!label.empty())
         {
             if(find_if(symtab.begin(), symtab.end(),
                       [&label](const pair<string, int>& p) {
-                          return p.first == label; 
+                          return p.first == label; // Condition to match
                       })!=symtab.end())
             {
                 e=1;
@@ -116,14 +122,18 @@ vector<pair<string,int>>pass1(ifstream &inputFile,int &e,int&start_add,int&loc_c
             else
             symtab.push_back({label,loc_ctr});
         }
-        if(!(instruction=="WORD"||instruction=="RESW"||instruction=="RESB"||instruction=="BYTE"))
-        loc_ctr+=3;
-        else if(instruction=="RESW")
-        loc_ctr+=3*stoi(operand);
+        if(instruction=="RESW")
+        {
+            loc_ctr+=3*stoi(operand);
+        }
         else if(instruction=="RESB")
-        loc_ctr+=stoi(operand);
+        {
+            loc_ctr+=stoi(operand);
+        }
         else if(instruction=="WORD")
-        loc_ctr+=3;
+        {
+            loc_ctr+=3;
+        }
         else if(instruction=="BYTE")
         {
             if(operand[0]=='C')
@@ -131,8 +141,22 @@ vector<pair<string,int>>pass1(ifstream &inputFile,int &e,int&start_add,int&loc_c
             else if(operand[0]=='X')
             loc_ctr+=(operand.length()-3)/2;
         }
+        else if(format2.find(instruction)!=format2.end())
+        {
+            loc_ctr+=format2[instruction];
+        }
+        else if(instruction[0]=='+')
+        {
+            loc_ctr+=4;
+        }
+        else if(instruction[0]=='@')
+        {
+            loc_ctr+=3;
+        }
         else if(OPTAB.find(instruction)!=OPTAB.end())
-        loc_ctr+=3;
+        {
+            loc_ctr+=3;
+        }
         else
         {
             e=1;
@@ -164,4 +188,5 @@ int main()
     }
     inputFile.close();
     return 0;
+    
 }
